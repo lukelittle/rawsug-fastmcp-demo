@@ -1,0 +1,332 @@
+You are a principal-level cloud engineer and AI systems architect. Generate a complete, production-ready demo repository that showcases Model Context Protocol (MCP) and FastMCP on AWS with a real web chatbot UI. This is for a live AWS User Group demo in Richmond.
+
+This is NOT a toy. Do not hand-wave IAM, logging, build/deploy steps, frontend integration, or error handling. Prefer clarity and correctness. Produce a repo that someone can clone, deploy, and demo immediately.
+
+========================================================
+HIGH-LEVEL DEMO STORY
+========================================================
+Build: “FastMCP and the Vinyl Collection Chatbot: Serverless Agentic AI in Action”
+
+Audience takeaway:
+- MCP is the universal contract for agent-to-tool integration.
+- FastMCP makes tools easy to author (schemas + validation + registry).
+- AWS hosting pattern is real: S3 + CloudFront for web UI, API Gateway + Lambda for backend, S3 for data, least-privilege IAM.
+- The “agent” decides when to call tools (deterministic fallback + optional Bedrock reasoning mode).
+
+The chatbot must let me “chat about my records” naturally, with strong tool support:
+- Artist / title / label / year queries
+- Lists, counts, and filters
+- “What do I own by X?” “Do I have anything on label Y?” “How many records from 2016?” “Show me stuff between 2009 and 2012” “Give me a quick summary” etc.
+
+========================================================
+REPO STRUCTURE (MANDATORY)
+========================================================
+Generate the full repo with exactly this structure:
+
+/
+├── infra/
+│   ├── main.tf
+│   ├── providers.tf
+│   ├── variables.tf
+│   ├── outputs.tf
+│   ├── iam.tf
+│   ├── apigw.tf
+│   ├── lambda.tf
+│   ├── s3.tf
+│   ├── cloudfront.tf
+│   ├── website.tf
+│   └── terraform.tfvars.example
+├── app/
+│   ├── server.py
+│   ├── requirements.txt
+│   ├── __init__.py
+│   ├── vinyl/
+│   │   ├── __init__.py
+│   │   ├── discogs.py
+│   │   └── router.py
+│   └── tests/
+│       ├── test_discogs.py
+│       ├── test_router.py
+│       └── test_handler.py
+├── web/
+│   ├── index.html
+│   ├── app.js
+│   ├── styles.css
+│   └── config.js.tmpl
+├── architecture/
+│   └── diagram.md
+├── .gitignore
+└── README.md
+
+========================================================
+AWS ARCHITECTURE REQUIREMENTS (MANDATORY)
+========================================================
+Terraform only. No CDK. No SAM.
+
+Frontend:
+- S3 bucket for static website origin (PRIVATE)
+- CloudFront distribution in front of S3
+- CloudFront Origin Access Control (OAC) (preferred) or OAI
+- Default root object index.html
+- Reasonable cache behavior for static assets
+- Output CloudFront URL
+
+Backend:
+- API Gateway (HTTP API preferred) with routes:
+  - POST /chat
+  - GET  /tools  (returns tool schemas + descriptions)
+  - GET  /health (simple healthcheck)
+- Lambda (Python 3.11) behind API Gateway
+- CloudWatch logs for Lambda
+- API Gateway access logs in structured JSON
+
+Data:
+- Separate S3 bucket for discogs.csv (data bucket)
+- Lambda reads discogs.csv from S3
+- README describes how to upload discogs.csv and expected columns
+
+CORS:
+- Enable CORS on API Gateway so the CloudFront site can call it.
+- Use dev-friendly CORS for demo (GET/POST, Content-Type) but explain how to lock it down to the CloudFront domain.
+
+Security:
+- Least privilege IAM
+- No secrets in frontend
+- No public S3 buckets for website origin
+
+========================================================
+FAST_MCP USAGE (MANDATORY AND NON-NEGOTIABLE)
+========================================================
+You MUST use the fastmcp Python library.
+
+The backend MUST:
+- Instantiate a FastMCP object
+- Register tools using @mcp.tool() decorators
+- Use FastMCP-generated schemas and validation as the source of truth
+- Invoke tools via the FastMCP tool registry (not by calling tool functions directly)
+- Provide an endpoint GET /tools that returns tool definitions (names, descriptions, JSON schema) from FastMCP
+
+IMPORTANT ARCHITECTURAL NOTE:
+This deploys behind API Gateway + Lambda, not as a long-running MCP SSE server. That is intentional.
+FastMCP is used as the MCP tool definition + schema/validation + registry layer inside Lambda.
+
+Do NOT:
+- bypass FastMCP and manually validate params
+- re-implement JSON schemas by hand
+- treat FastMCP as optional
+
+========================================================
+MODEL CONFIGURATION (MANDATORY)
+========================================================
+Bedrock is OPTIONAL but supported. The system MUST work without Bedrock.
+
+If Bedrock-based reasoning is implemented, it MUST:
+- Use AWS Bedrock with Anthropic Claude 3.5 Haiku
+- Default model ID:
+  anthropic.claude-3-5-haiku-20241022-v1:0
+- Model ID MUST be configurable via environment variable:
+  BEDROCK_MODEL_ID
+- Region MUST be configurable via environment variable:
+  BEDROCK_REGION
+
+Environment variables:
+- USE_BEDROCK=true|false (default false)
+- BEDROCK_MODEL_ID=anthropic.claude-3-5-haiku-20241022-v1:0
+- BEDROCK_REGION=us-east-1 (or inferred from Lambda region)
+- DISCOGS_BUCKET=<set by Terraform>
+- DISCOGS_KEY=discogs.csv (default)
+
+When USE_BEDROCK=false:
+- The system MUST NOT attempt any Bedrock calls
+- The chatbot MUST still function fully using deterministic routing
+
+When USE_BEDROCK=true:
+- Claude 3.5 Haiku may be used for:
+  - Tool selection (choosing FastMCP tools + arguments)
+  - Drafting conversational responses grounded in tool output
+- Tool execution MUST still go through FastMCP
+- Response JSON should include:
+  "model": "claude-3.5-haiku" when Bedrock was used, otherwise null
+
+========================================================
+BEDROCK IAM REQUIREMENTS (MANDATORY)
+========================================================
+If Bedrock is enabled:
+- Lambda IAM role may include bedrock:InvokeModel
+- Permissions must be scoped to the model ARN for:
+  anthropic.claude-3-5-haiku-20241022-v1:0
+- No wildcard bedrock:* permissions
+
+========================================================
+BACKEND API CONTRACT (MANDATORY)
+========================================================
+POST /chat
+
+Request JSON:
+{
+  "message": "string (required)",
+  "sessionId": "string (optional)",
+  "mode": "auto|deterministic|bedrock (optional)"
+}
+
+Response JSON:
+{
+  "answer": "string",
+  "toolUsed": true/false,
+  "toolName": "string|null",
+  "toolArgs": { ... } | null,
+  "toolResults": [ "string", ... ] | null,
+  "requestId": "string",
+  "model": "string|null"
+}
+
+Behavior:
+- In deterministic mode, use a robust rules-based router to decide tool usage and infer arguments.
+- In bedrock mode, use Bedrock to decide tool usage and draft a conversational answer (optional feature, must be mockable in tests).
+- In auto mode:
+  - if USE_BEDROCK=true, prefer bedrock mode
+  - else prefer deterministic mode
+
+Health:
+- GET /health returns 200 with simple JSON.
+
+Tools endpoint:
+- GET /tools returns a JSON listing of tool metadata and schemas from FastMCP.
+
+========================================================
+VINYL “CHAT ABOUT MY RECORDS” FUNCTIONAL REQUIREMENTS
+========================================================
+Implement a Discogs CSV reader with:
+- S3 download with simple caching within a Lambda invocation
+- CSV parsing via csv.DictReader (no pandas)
+- Normalization helpers (strip, lowercasing, safe field access)
+- Handles missing columns gracefully with useful errors
+
+Support common Discogs export columns but do not assume exact names only.
+Implement mapping strategy:
+- Prefer common headers: Artist, Title, Label, Released, Year, Format, Catalog#, Country, Date Added (if present)
+- If “Released” contains year-like values, parse year.
+- If a column is absent, tools still work with partial functionality.
+
+========================================================
+TOOLS (MUST BE FASTMCP TOOLS)
+========================================================
+Implement these as FastMCP tools with strong docstrings + type hints so schemas are excellent:
+
+1) query_vinyl_collection
+   Args:
+   - query_type: one of ["artist","title","label","year","all"]
+   - search_term: string
+   - limit: int default 10 (bounds 1..50)
+   Returns:
+   - list[str] formatted lines:
+     "Artist - Title (Label, Year)"
+
+2) list_artists
+   Args:
+   - starts_with: optional string
+   - limit: int default 25 (bounds 1..100)
+   Returns:
+   - list[str] unique artist names, sorted
+
+3) stats_summary
+   Returns a dict with:
+   - total_records
+   - unique_artists
+   - unique_labels
+   - year_min, year_max (if available)
+   - top_artists: list of {artist,count}
+   - top_labels: list of {label,count}
+
+4) filter_records
+   Args:
+   - artist: optional string
+   - label: optional string
+   - year_from: optional int
+   - year_to: optional int
+   - limit: int default 10 (bounds 1..50)
+   Returns:
+   - list[str] formatted lines
+
+All tools must:
+- Validate inputs via FastMCP schema/validation
+- Return stable shapes
+- Never throw raw exceptions to clients; log + return safe errors
+
+========================================================
+“AGENT ROUTER” (MANDATORY)
+========================================================
+Implement a router that makes the chat feel natural without requiring Bedrock:
+- Detect intents:
+  - “what do I have by <artist>”
+  - “do I have anything on <label>”
+  - “records from <year>” and “between <year> and <year>”
+  - “how many records / stats / summary”
+  - “list artists”
+  - “search <term>” (falls back to query_type=all)
+- Infer tool name + args.
+- If no tool intent detected, answer politely as general knowledge and suggest example queries (“Try: what records do I have by Grimes?”)
+
+Optional Bedrock enhancement:
+- If USE_BEDROCK=true, Bedrock may:
+  - choose tool + args from the /tools schema
+  - call the tool
+  - draft a final conversational answer grounded in tool output
+But deterministic mode must work perfectly without Bedrock.
+
+========================================================
+FRONTEND (MANDATORY)
+========================================================
+Build a simple, attractive chatbot UI with:
+- Transcript panel (user vs bot)
+- Input + send button
+- Tool indicator (“Used tool: stats_summary”)
+- Tool results expandable/collapsible (good for demo)
+- Loading state
+- Error display
+- “Examples” panel with clickable prompts:
+  - “What records do I have by Grimes?”
+  - “Do I have anything on 4AD?”
+  - “Show me records from 2016”
+  - “Give me a quick stats summary”
+  - “List some artists”
+
+Frontend config:
+- Terraform must inject the API base URL into the frontend at deploy time.
+- Use web/config.js.tmpl and generate config.js via Terraform templatefile, then upload to S3.
+- app.js reads window.__CONFIG__.API_BASE_URL
+
+Frontend calls:
+- POST `${API_BASE_URL}/chat` with JSON payload.
+- Show response fields (answer, tool used, results).
+- Optionally show whether Bedrock was used (“model”: value).
+
+No frameworks required; plain HTML/CSS/JS is fine. Keep it readable and demo-friendly.
+
+========================================================
+TESTING REQUIREMENTS (MANDATORY)
+========================================================
+Use pytest. Tests must run locally without AWS credentials.
+
+Tests:
+- Discogs parsing + normalization
+- query_vinyl_collection behavior (case-insensitive, limits, no matches)
+- stats_summary correctness on small sample CSV
+- router intent detection and tool argument inference
+- handler end-to-end with mocked S3 and deterministic mode
+
+Mocking:
+- Use botocore Stubber or moto for S3
+- If Bedrock code exists, mock it entirely (no network calls)
+
+========================================================
+TERRAFORM DEPLOYMENT REQUIREMENTS (MANDATORY)
+========================================================
+Terraform must:
+- Package Lambda (zip) from app/ including dependencies
+  - Prefer a simple build step using null_resource + local-exec:
+    pip install -r requirements.txt -t build/
+    copy app code into build/
+    zip build -> lambda.zip
+  - Keep it understandable for demo; document in README
+- Create API Gateway rout

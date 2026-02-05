@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vinyl Collection Chatbot - FastMCP Demo</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>🎵 Vinyl Collection Chatbot</h1>
+            <p class="subtitle">FastMCP + AWS Serverless Demo</p>
+        </header>
+
+        <div class="main-content">
+            <!-- Examples Panel -->
+            <aside class="examples-panel">
+                <h3>Try These Examples:</h3>
+                <div class="example-buttons">
+                    <button class="example-btn" data-query="What records do I have by Grimes?">
+                        🎤 What records do I have by Grimes?
+                    </button>
+                    <button class="example-btn" data-query="Do I have anything on 4AD?">
+                        🏷️ Do I have anything on 4AD?
+                    </button>
+                    <button class="example-btn" data-query="Show me records from 2016">
+                        📅 Show me records from 2016
+                    </button>
+                    <button class="example-btn" data-query="Records between 2010 and 2020">
+                        📊 Records between 2010 and 2020
+                    </button>
+                    <button class="example-btn" data-query="Give me a quick stats summary">
+                        📈 Give me a quick stats summary
+                    </button>
+                    <button class="example-btn" data-query="List some artists">
+                        👥 List some artists
+                    </button>
+                </div>
+            </aside>
+
+            <!-- Chat Panel -->
+            <div class="chat-panel">
+                <!-- Transcript -->
+                <div class="transcript" id="transcript">
+                    <div class="message bot-message">
+                        <div class="message-content">
+                            <p>👋 Hi! I'm your vinyl collection assistant. Ask me about your records!</p>
+                            <p class="hint">Try asking: "What records do I have by Grimes?" or "Give me a quick stats summary"</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Input Area -->
+                <div class="input-area">
+                    <input 
+                        type="text" 
+                        id="messageInput" 
+                        placeholder="Ask about your vinyl collection..."
+                        autocomplete="off"
+                    >
+                    <button id="sendButton">Send</button>
+                </div>
+
+                <!-- Loading Indicator -->
+                <div class="loading" id="loading" style="display: none;">
+                    <div class="loading-spinner"></div>
+                    <span>Searching collection...</span>
+                </div>
+            </div>
+        </div>
+
+        <footer class="footer">
+            <p>Powered by FastMCP • AWS Lambda • API Gateway • S3</p>
+        </footer>
+    </div>
+
+    <script src="config.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
