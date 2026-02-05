@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FastMCP & the Vinyl Collection Chatbot - Luke Little</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', sans-serif;
+            background: #0f0f23;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+        
+        .slide-container {
+            width: 100%;
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 40px;
+        }
+        
+        .slide {
+            display: none;
+            background: #1a1a2e;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+            padding: 60px;
+            max-width: 1200px;
+            width: 100%;
+            min-height: 600px;
+            overflow-y: auto;
+            max-height: calc(100vh - 80px);
+            border: 1px solid #2d2d44;
+        }
+        
+        .slide.active {
+            display: block;
+            animation: fadeIn 0.5s ease-in;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        h1 {
+            color: #667eea;
+            font-size: 3.5em;
+            margin-bottom: 20px;
+            line-height: 1.2;
+        }
+        
+        h2 {
+            color: #764ba2;
+            font-size: 2.5em;
+            margin-bottom: 30px;
+            border-bottom: 3px solid #667eea;
+            padding-bottom: 15px;
+        }
+        
+        h3 {
+            color: #667eea;
+            font-size: 1.8em;
+            margin: 30px 0 15px 0;
+        }
+        
+        p, li {
+            font-size: 1.3em;
+            line-height: 1.6;
+            color: #d4d4d4;
+            margin-bottom: 15px;
+        }
+        
+        ul {
+            margin-left: 30px;
+        }
+        
+        .subtitle {
+            font-size: 1.5em;
+            color: #9ca3af;
+            margin-bottom: 10px;
+        }
+        
+        .author {
+            font-size: 1.2em;
+            color: #764ba2;
+            margin-top: 30px;
+        }
+        
+        code {
+            background: #f5f5f5;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-family: 'Monaco', 'Courier New', monospace;
+            font-size: 0.9em;
+            color: #764ba2;
+        }
+        
+        pre {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 25px;
+            border-radius: 8px;
+            overflow-x: auto;
+            margin: 20px 0;
+            font-size: 0.95em;
+            line-height: 1.5;
+        }
+        
+        pre code {
+            background: transparent;
+            padding: 0;
+            color: #d4d4d4;
+            font-size: 1em;
+        }
+        
+        .highlight {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 25px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        
+        .highlight p {
+            color: white;
+            font-size: 1.4em;
+        }
+        
+        .diagram {
+            background: #f8f9fa;
+            border: 2px solid #667eea;
+            border-radius: 8px;
+            padding: 30px;
+            margin: 20px 0;
+            text-align: center;
+        }
+        
+        .diagram-box {
+            display: inline-block;
+            background: white;
+            border: 2px solid #764ba2;
+            border-radius: 6px;
+            padding: 15px 25px;
+            margin: 10px;
+            font-weight: 600;
+            color: #764ba2;
+        }
+        
+        .arrow {
+            display: inline-block;
+            margin: 0 10px;
+            color: #667eea;
+            font-size: 1.5em;
+        }
+        
+        .navigation {
+            position: fixed;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: none;
+            gap: 15px;
+            z-index: 1000;
+        }
+        
+        .nav-btn {
+            background: white;
+            color: #667eea;
+            border: 2px solid #667eea;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 1em;
+            transition: all 0.3s;
+        }
+        
+        .nav-btn:hover {
+            background: #667eea;
+            color: white;
+        }
+        
+        .nav-btn:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+        
+        .progress {
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 5px;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            transition: width 0.3s;
+            z-index: 1000;
+        }
+        
+        .slide-number {
+            position: fixed;
+            top: 20px;
+            right: 30px;
+            background: white;
+            color: #667eea;
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-weight: 600;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            z-index: 1000;
+        }
+        
+        .two-column {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin: 20px 0;
+        }
+        
+        .badge {
+            display: inline-block;
+            background: #28a745;
+            color: white;
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-size: 0.8em;
+            font-weight: 600;
+            margin-left: 10px;
+        }
+        
+        .emoji {
+            font-size: 1.2em;
+            margin-right: 8px;
+        }
+        
+        strong {
+            color: #a78bfa;
+        }
+        
+        /* Mermaid diagram styling */
+        .diagram pre.mermaid {
+            background: transparent;
+            padding: 20px;
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 350px;
+        }
+        
+        .diagram .mermaid svg {
+            max-width: 75% !important;
+            width: 75% !important;
+            height: auto !important;
+        }
+    </style>
+</head>
+<body>
+    <div class="progress" id="progress"></div>
+    <div class="slide-number" id="slideNumber">1 / 16</div>
+    
+    <div class="slide-container">
+        <!-- Slide 1: Title -->
+        <div class="slide active">
+            <h1>🎵 FastMCP and the Vinyl Collection Chatbot</h1>
+            <p class="subtitle">Serverless Agentic AI in Action</p>
+            <div class="highlight">
+                <p><span class="emoji">🚀</span> Building AI agent integrations with FastMCP and the Model Context Protocol—the universal standard that makes agents actually useful in production</p>
+            </div>
+            <p class="author"><strong>Luke Little</strong> • AWS Meetup 2026</p>
+            <p style="margin-top: 40px; font-size: 1.1em; color: #9ca3af;">
+                <em>Use arrow keys or buttons below to navigate →</em>
+            </p>
+        </div>
+        
+        <!-- Slide 2: What is MCP? -->
+        <div class="slide">
+            <h2>What is the Model Context Protocol?</h2>
+            <p><strong>MCP is an open standard for connecting AI agents to external systems.</strong></p>
+            <div class="highlight">
+                <p><span class="emoji">🔌</span> Think of it as a universal adapter that lets any AI agent talk to any tool or data source without custom integration code.</p>
+            </div>
+            <ul>
+                <li>Announced by Anthropic in <strong>November 2024</strong></li>
+                <li>Donated to Linux Foundation's <strong>Agentic AI Foundation</strong></li>
+                <li>Adopted by: OpenAI, Google DeepMind, AWS, Zed, Sourcegraph, Replit</li>
+                <li><strong>Thousands</strong> of MCP servers built in just months</li>
+            </ul>
+            <p style="margin-top: 30px; font-size: 1.2em;">
+                <strong>The de-facto standard for agent-to-tool communication</strong>
+            </p>
+        </div>
+        
+        <!-- Slide 3: The N×M Problem -->
+        <div class="slide">
+            <h2>The N×M Integration Problem</h2>
+            <p><strong>Traditional approach:</strong> Build custom integrations for every pairing</p>
+            <div class="diagram">
+                <p style="color: #764ba2; font-weight: 600; margin-bottom: 20px;">Without MCP: N agents × M services = N×M integrations 😱</p>
+                <div>3 agents × 4 services = <strong>12 custom connectors</strong></div>
+                <div style="margin-top: 10px;">10 agents × 50 systems = <strong>500 integrations</strong> 🤯</div>
+            </div>
+            <div class="highlight">
+                <p><span class="emoji">✨</span> <strong>With MCP:</strong> Build each MCP server once. Any agent can use it. Period.</p>
+            </div>
+            <p>Build Salesforce MCP server → DevOps Agent, Security Agent, Kiro, Claude Desktop—all can access it immediately.</p>
+        </div>
+        
+        <!-- Slide 4: How MCP Works -->
+        <div class="slide">
+            <h2>How MCP Works: Architecture</h2>
+            <p><strong>Client-server architecture using JSON-RPC 2.0</strong></p>
+            <h3>Three Core Primitives:</h3>
+            <ul>
+                <li><strong>Resources</strong> <span class="badge">GET</span> - Load information into LLM context (files, database records, API responses)</li>
+                <li><strong>Tools</strong> <span class="badge">POST</span> - Execute code with side effects (create tickets, deploy code, send messages)</li>
+                <li><strong>Prompts</strong> <span class="badge">TEMPLATE</span> - Reusable templates for common tasks</li>
+            </ul>
+            <p style="margin-top: 30px; font-size: 1.2em;">
+                <em>Clean request-response pattern with JSON-RPC 2.0 messaging</em>
+            </p>
+        </div>
+        
+        <!-- Slide 5: Communication Flow -->
+        <div class="slide">
+            <h2>The Communication Flow</h2>
+            <div class="diagram">
+                <pre class="mermaid">
+sequenceDiagram
+    participant Agent as Agent (Client)
+    participant Server as MCP Server
+    Agent->>Server: 1. Initialize Connection
+    Agent->>Server: 2. List Available Tools
+    Server->>Agent: 3. Tool Definitions (JSON Schema)
+    Agent->>Server: 4. Call Tool (with parameters)
+    Server->>Server: 5. Validate & Execute
+    Server->>Agent: 6. Return Result
+    Agent->>Agent: 7. Use Result in Response
+                </pre>
+            </div>
+            <p style="margin-top: 20px;"><strong>Simple, clean, standardized.</strong></p>
+        </div>
+        
+        <!-- Slide 6: Transport Mechanisms -->
+        <div class="slide">
+            <h2>Transport Mechanisms</h2>
+            <div class="two-column">
+                <div>
+                    <h3>stdio (Standard I/O)</h3>
+                    <ul>
+                        <li>Local integration</li>
+                        <li>Server runs as subprocess</li>
+                        <li>Communicates via stdin/stdout</li>
+                        <li>✅ Simple, fast, synchronous</li>
+                        <li>❌ Local only</li>
+                    </ul>
+                    <p style="margin-top: 20px;"><strong>Used by:</strong> Claude Desktop</p>
+                </div>
+                <div>
+                    <h3>SSE (Server-Sent Events)</h3>
+                    <ul>
+                        <li>Remote integration</li>
+                        <li>HTTP-based streaming</li>
+                        <li>Server pushes updates</li>
+                        <li>✅ Network-capable</li>
+                        <li>✅ Real-time updates</li>
+                    </ul>
+                    <p style="margin-top: 20px;"><strong>Used by:</strong> Cloud deployments</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Slide 7: FastMCP Introduction -->
+        <div class="slide">
+            <h2>Building with FastMCP</h2>
+            <p><strong>Decorator-based Python framework that makes building MCP servers feel like writing FastAPI</strong></p>
+            <div class="highlight">
+                <p><span class="emoji">⚡</span> FastAPI for AI agents • Flask for tool integration • Express.js for MCP</p>
+            </div>
+            <p><strong>What FastMCP handles for you:</strong></p>
+            <ul>
+                <li>JSON-RPC protocol details</li>
+                <li>Connection management</li>
+                <li>Automatic JSON Schema generation from type hints</li>
+                <li>Serialization/deserialization</li>
+                <li>Error handling</li>
+                <li>Both stdio and SSE transports</li>
+            </ul>
+        </div>
+        
+        <!-- Slide 8: Simple FastMCP Example -->
+        <div class="slide">
+            <h2>Simple FastMCP Server</h2>
+            <p><strong>A complete, working MCP server in 10 lines:</strong></p>
+            <pre><code>from fastmcp import FastMCP
+
+# Initialize server
+mcp = FastMCP("My First Server")
+
+# Define a tool
+@mcp.tool()
+def add_numbers(a: int, b: int) -> int:
+    """Add two numbers together"""
+    return a + b
+
+# Run it
+if __name__ == "__main__":
+    mcp.run()</code></pre>
+            <p style="margin-top: 20px;"><strong>That's it!</strong> No boilerplate. No protocol details. Just your logic.</p>
+        </div>
+        
+        <!-- Slide 9: Real Example - GitHub -->
+        <div class="slide">
+            <h2>Real Example: GitHub Integration</h2>
+            <pre><code>from fastmcp import FastMCP
+from github import Github
+
+mcp = FastMCP("GitHub Integration")
+gh = Github(os.getenv("GITHUB_TOKEN"))
+
+@mcp.tool()
+def get_repository_info(owner: str, repo: str) -> dict:
+    """Get information about a GitHub repository."""
+    repository = gh.get_repo(f"{owner}/{repo}")
+    
+    return {
+        "name": repository.name,
+        "stars": repository.stargazers_count,
+        "forks": repository.forks_count,
+        "language": repository.language
+    }</code></pre>
+            <p><strong>Now any MCP client can query GitHub!</strong></p>
+        </div>
+        
+        <!-- Slide 10: Advanced Features -->
+        <div class="slide">
+            <h2>Advanced FastMCP Features</h2>
+            <ul>
+                <li><strong>Context Injection</strong> - Send progress updates to clients during long operations</li>
+                <li><strong>Sampling</strong> - Request LLM completions from the client (no API keys needed)</li>
+                <li><strong>Elicitation</strong> - Request additional info mid-operation</li>
+                <li><strong>Filesystem Roots</strong> - Security boundaries for file access</li>
+            </ul>
+            <div class="highlight" style="margin-top: 30px;">
+                <p><span class="emoji">🔧</span> FastMCP isn't just decorators—it's a full-featured framework for production integrations</p>
+            </div>
+        </div>
+        
+        <!-- Slide 11: Vinyl Collection Chatbot -->
+        <div class="slide">
+            <h2>🎵 Case Study: Vinyl Collection Chatbot</h2>
+            <p><strong>Serverless chatbot that answers questions about my vinyl collection</strong></p>
+            <ul>
+                <li>Data: Discogs export CSV stored in S3</li>
+                <li>Backend: AWS Lambda + Bedrock</li>
+                <li>MCP Server: FastMCP querying the collection</li>
+                <li>Frontend: Simple HTML/JS interface</li>
+            </ul>
+            <div class="diagram">
+                <div class="diagram-box">User</div>
+                <div class="arrow">→</div>
+                <div class="diagram-box">Frontend</div>
+                <div class="arrow">→</div>
+                <div class="diagram-box">Lambda</div>
+                <div class="arrow">→</div>
+                <div class="diagram-box">Bedrock</div>
+                <div class="arrow">→</div>
+                <div class="diagram-box">FastMCP</div>
+                <div class="arrow">→</div>
+                <div class="diagram-box">S3</div>
+            </div>
+            <p style="margin-top: 20px;"><strong>Agent intelligently decides when to use tools vs. general knowledge!</strong></p>
+        </div>
+        
+        <!-- Slide 12: Vinyl Collection Code -->
+        <div class="slide">
+            <h2>Vinyl Collection MCP Server</h2>
+            <pre><code>from fastmcp import FastMCP
+import boto3, csv
+
+mcp = FastMCP("vinyl-collection-server")
+s3_client = boto3.client('s3')
+
+@mcp.tool()
+def query_vinyl_collection(
+    query_type: str, 
+    search_term: str, 
+    limit: int = 10
+) -> str:
+    """Query Luke's vinyl collection."""
+    # Download CSV from S3
+    response = s3_client.get_object(
+        Bucket='my-vinyl-collection', 
+        Key='discogs.csv'
+    )
+    # Parse and filter records
+    # Return formatted results</code></pre>
+            <p><strong>Deployed in under 2 minutes. Costs ~$15/month. Production-ready.</strong></p>
+        </div>
+        
+        <!-- Slide 13: AWS AgentCore Integration -->
+        <div class="slide">
+            <h2>AWS Bedrock AgentCore + MCP</h2>
+            <p><strong>AgentCore natively supports MCP through Gateway service</strong></p>
+            <div class="diagram">
+                <div class="diagram-box">AgentCore Runtime</div>
+                <div class="arrow">→</div>
+                <div class="diagram-box">AgentCore Gateway</div>
+                <div class="arrow">→</div>
+                <div class="diagram-box">Your MCP Servers</div>
+            </div>
+            <ul style="margin-top: 30px;">
+                <li><strong>Tool Discovery</strong> - Lists all registered MCP servers</li>
+                <li><strong>Policy Enforcement</strong> - Control which agents use which tools</li>
+                <li><strong>Authentication</strong> - OAuth & API key handling</li>
+                <li><strong>Observability</strong> - CloudWatch logging</li>
+                <li><strong>Scaling</strong> - Fully managed infrastructure</li>
+            </ul>
+        </div>
+        
+        <!-- Slide 14: Security Best Practices -->
+        <div class="slide">
+            <h2>Security & Best Practices</h2>
+            <div class="two-column">
+                <div>
+                    <h3>Input Validation</h3>
+                    <ul>
+                        <li>Validate before execution</li>
+                        <li>Sanitize SQL queries</li>
+                        <li>Block dangerous operations</li>
+                    </ul>
+                    <h3 style="margin-top: 30px;">Least Privilege</h3>
+                    <ul>
+                        <li>Read-only tokens</li>
+                        <li>Scoped permissions</li>
+                        <li>Minimal access</li>
+                    </ul>
+                </div>
+                <div>
+                    <h3>Rate Limiting</h3>
+                    <ul>
+                        <li>Protect backend systems</li>
+                        <li>Prevent abuse</li>
+                        <li>Use Redis in production</li>
+                    </ul>
+                    <h3 style="margin-top: 30px;">Error Handling</h3>
+                    <ul>
+                        <li>Generic error messages</li>
+                        <li>Don't leak internals</li>
+                        <li>Log for debugging</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Slide 15: The Future of MCP -->
+        <div class="slide">
+            <h2>The Future of MCP</h2>
+            <h3>Near Term (6-12 months)</h3>
+            <ul>
+                <li>Every major AI platform supports MCP</li>
+                <li>IDE integration (VS Code, JetBrains, Zed)</li>
+                <li>Enhanced security & OAuth 2.0 standardization</li>
+            </ul>
+            <h3>Medium Term (1-2 years)</h3>
+            <ul>
+                <li>MCP server marketplace</li>
+                <li>Multi-step workflows chaining tools</li>
+                <li>Visual server builders (low-code)</li>
+            </ul>
+            <h3>Long Term (2-5 years)</h3>
+            <div class="highlight">
+                <p><strong>MCP becomes the HTTP of agentic AI</strong></p>
+                <p>Every enterprise system provides an MCP interface</p>
+            </div>
+        </div>
+        
+        <!-- Slide 16: Next Steps -->
+        <div class="slide">
+            <h2>Next Steps: Get Started Today</h2>
+            <h3>1. Learn FastMCP Basics (30 min)</h3>
+            <pre><code>pip install fastmcp
+# Build hello world server
+# Test with Claude Desktop</code></pre>
+            
+            <h3>2. Build Your First MCP Server (2 hours)</h3>
+            <p>Pick your most-used tool: GitHub, Jira, Salesforce, or internal API</p>
+            
+            <h3>3. Integrate with Agents (1 hour)</h3>
+            <p>Add to Claude Desktop or AWS AgentCore Gateway</p>
+            
+            <div class="highlight" style="margin-top: 30px;">
+                <p><span class="emoji">🚀</span> <strong>The question isn't "Should we adopt MCP?"</strong></p>
+                <p><strong>It's "Which systems do we connect first?"</strong></p>
+            </div>
+            
+            <p style="margin-top: 30px; font-size: 1.1em;">
+                <strong>Resources:</strong> modelcontextprotocol.io • github.com/jlowin/fastmcp • lukelittle.com
+            </p>
+        </div>
+    </div>
+    
+    <div class="navigation">
+        <button class="nav-btn" id="prevBtn" onclick="changeSlide(-1)">← Previous</button>
+        <button class="nav-btn" id="nextBtn" onclick="changeSlide(1)">Next →</button>
+    </div>
+    
+    <script>
+        let currentSlide = 0;
+        const slides = document.querySelectorAll('.slide');
+        const totalSlides = slides.length;
+        
+        function showSlide(n) {
+            slides[currentSlide].classList.remove('active');
+            
+            if (n >= totalSlides) {
+                currentSlide = totalSlides - 1;
+            } else if (n < 0) {
+                currentSlide = 0;
+            } else {
+                currentSlide = n;
+            }
+            
+            slides[currentSlide].classList.add('active');
+            
+            // Update navigation buttons
+            document.getElementById('prevBtn').disabled = currentSlide === 0;
+            document.getElementById('nextBtn').disabled = currentSlide === totalSlides - 1;
+            
+            // Update progress bar
+            const progress = ((currentSlide + 1) / totalSlides) * 100;
+            document.getElementById('progress').style.width = progress + '%';
+            
+            // Update slide number
+            document.getElementById('slideNumber').textContent = `${currentSlide + 1} / ${totalSlides}`;
+        }
+        
+        function changeSlide(direction) {
+            showSlide(currentSlide + direction);
+        }
+        
+        // Keyboard navigation
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'ArrowLeft') {
+                changeSlide(-1);
+            } else if (event.key === 'ArrowRight') {
+                changeSlide(1);
+            }
+        });
+        
+        // Initialize
+        showSlide(0);
+        
+        // Initialize Mermaid with custom theme
+        mermaid.initialize({ 
+            startOnLoad: true,
+            theme: 'base',
+            themeVariables: {
+                primaryColor: '#667eea',
+                primaryTextColor: '#1f2937',
+                primaryBorderColor: '#764ba2',
+                lineColor: '#667eea',
+                secondaryColor: '#f8f9fa',
+                tertiaryColor: '#e3f2fd',
+                background: '#f8f9fa',
+                mainBkg: '#ffffff',
+                secondBkg: '#f8f9fa',
+                textColor: '#1f2937',
+                border1: '#764ba2',
+                border2: '#667eea',
+                fontSize: '16px'
+            }
+        });
+    </script>
+</body>
+</html>
