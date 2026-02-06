@@ -1,12 +1,7 @@
 # Build Lambda deployment package
 resource "null_resource" "lambda_build" {
   triggers = {
-    # Rebuild when source code changes
-    source_hash = sha256(join("", [
-      for f in fileset("${path.module}/../app", "**/*.py") :
-      filesha256("${path.module}/../app/${f}")
-    ]))
-    requirements_hash = filesha256("${path.module}/../app/requirements.txt")
+    always_run = timestamp()
   }
 
   provisioner "local-exec" {
@@ -18,16 +13,36 @@ resource "null_resource" "lambda_build" {
       rm -rf ${path.module}/build
       mkdir -p ${path.module}/build
       
-      # Install dependencies
-      pip install -r ${path.module}/../app/requirements.txt -t ${path.module}/build/ --quiet
+      # Install dependencies for Linux Lambda runtime (Python 3.11)
+      echo "Installing dependencies for Python 3.11 on Linux x86_64..."
+      pip3 install \
+        fastmcp \
+        boto3 \
+        -t ${path.module}/build/ \
+        --platform manylinux2014_x86_64 \
+        --python-version 3.11 \
+        --only-binary=:all: \
+        --implementation cp \
+        --quiet \
+        --upgrade \
+        --no-cache-dir
       
       # Copy application code
-      cp -r ${path.module}/../app/*.py ${path.module}/build/
+      cp ${path.module}/../app/*.py ${path.module}/build/
       cp -r ${path.module}/../app/vinyl ${path.module}/build/
       
-      # Create zip
-      cd ${path.module}/build
-      zip -r ${path.module}/lambda.zip . -q
+      # Remove unnecessary files to reduce size
+      find ${path.module}/build -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true
+      find ${path.module}/build -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+      find ${path.module}/build -name "*.pyc" -delete 2>/dev/null || true
+      find ${path.module}/build -name "*.pyo" -delete 2>/dev/null || true
+      
+      # Remove boto3/botocore (already in Lambda runtime)
+      rm -rf ${path.module}/build/boto3* ${path.module}/build/botocore* 2>/dev/null || true
+      
+      # Strip binary files to reduce size
+      find ${path.module}/build -name "*.so" -exec strip {} + 2>/dev/null || true
+      find ${path.module}/build -name "*.a" -delete 2>/dev/null || true
       
       echo "Lambda package built successfully"
     EOT
@@ -40,7 +55,7 @@ resource "aws_lambda_function" "chatbot" {
   function_name    = "${var.project_name}-chatbot-${var.environment}"
   role            = aws_iam_role.lambda.arn
   handler         = "server.lambda_handler"
-  source_code_hash = filebase64sha256("${path.module}/lambda.zip")
+  source_code_hash = data.archive_file.lambda_zip.output_base64sha256
   runtime         = "python3.11"
   timeout         = 30
   memory_size     = 512
@@ -60,6 +75,15 @@ resource "aws_lambda_function" "chatbot" {
     aws_iam_role_policy.lambda_logs,
     aws_iam_role_policy.lambda_s3_data
   ]
+}
+
+# Archive the Lambda package
+data "archive_file" "lambda_zip" {
+  type        = "zip"
+  source_dir  = "${path.module}/build"
+  output_path = "${path.module}/lambda.zip"
+
+  depends_on = [null_resource.lambda_build]
 }
 
 # CloudWatch Log Group

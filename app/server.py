@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Optional
 
+import boto3
+
 from vinyl.router import DeterministicRouter
 from vinyl.tools import mcp
 
@@ -55,6 +57,7 @@ class LambdaConfig:
 # Global instances (cached across Lambda invocations)
 _config: Optional[LambdaConfig] = None
 _router: Optional[DeterministicRouter] = None
+_bedrock_client: Optional[Any] = None
 
 
 def get_config() -> LambdaConfig:
@@ -71,6 +74,120 @@ def get_router() -> DeterministicRouter:
     if _router is None:
         _router = DeterministicRouter()
     return _router
+
+
+def get_bedrock_client():
+    """Get or initialize Bedrock client."""
+    global _bedrock_client
+    if _bedrock_client is None:
+        config = get_config()
+        region = config.bedrock_region if config.bedrock_region else os.environ.get('AWS_REGION', 'us-east-1')
+        logger.info(f"Initializing Bedrock client in region: {region}")
+        _bedrock_client = boto3.client('bedrock-runtime', region_name=region)
+    return _bedrock_client
+
+
+def call_bedrock_with_tools(message: str, tools: list[dict]) -> dict:
+    """
+    Call Bedrock with tool definitions to handle the user query.
+    
+    Args:
+        message: User's message
+        tools: List of tool definitions
+        
+    Returns:
+        dict with answer, toolUsed, toolName, toolArgs, etc.
+    """
+    config = get_config()
+    client = get_bedrock_client()
+    
+    try:
+        # Build the request for Claude
+        request_body = {
+            "anthropic_version": "bedrock-2023-05-31",
+            "max_tokens": 1024,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": message
+                }
+            ],
+            "tools": tools,
+            "system": (
+                "You are a helpful assistant for querying a vinyl record collection. "
+                "You have access to tools to search the collection. "
+                "Use the tools when the user asks about their vinyl records. "
+                "If the user asks about something unrelated to vinyl records, "
+                "politely explain that you can only help with vinyl collection queries."
+            )
+        }
+        
+        logger.info(f"Calling Bedrock with model: {config.bedrock_model_id}")
+        
+        response = client.invoke_model(
+            modelId=config.bedrock_model_id,
+            body=json.dumps(request_body)
+        )
+        
+        response_body = json.loads(response['body'].read())
+        logger.info(f"Bedrock response: {response_body}")
+        
+        # Parse response
+        stop_reason = response_body.get('stop_reason')
+        content = response_body.get('content', [])
+        
+        if stop_reason == 'tool_use':
+            # Claude wants to use a tool
+            for block in content:
+                if block.get('type') == 'tool_use':
+                    tool_name = block.get('name')
+                    tool_args = block.get('input', {})
+                    
+                    logger.info(f"Bedrock selected tool: {tool_name} with args: {tool_args}")
+                    
+                    # Execute the tool
+                    import asyncio
+                    tool = asyncio.run(mcp.get_tool(tool_name))
+                    tool_results = tool.fn(**tool_args)
+                    
+                    # Format response
+                    if isinstance(tool_results, list):
+                        if len(tool_results) == 0:
+                            answer = "No results found."
+                        else:
+                            answer = f"Found {len(tool_results)} result(s):\n\n" + "\n".join(tool_results)
+                    elif isinstance(tool_results, dict):
+                        answer = format_stats(tool_results)
+                    else:
+                        answer = str(tool_results)
+                    
+                    return {
+                        "answer": answer,
+                        "toolUsed": True,
+                        "toolName": tool_name,
+                        "toolArgs": tool_args,
+                        "toolResults": tool_results if isinstance(tool_results, list) else [str(tool_results)],
+                        "model": config.bedrock_model_id
+                    }
+        
+        # No tool use - just return Claude's text response
+        text_response = ""
+        for block in content:
+            if block.get('type') == 'text':
+                text_response += block.get('text', '')
+        
+        return {
+            "answer": text_response or "I'm not sure how to help with that.",
+            "toolUsed": False,
+            "toolName": None,
+            "toolArgs": None,
+            "toolResults": None,
+            "model": config.bedrock_model_id
+        }
+        
+    except Exception as e:
+        logger.error(f"Bedrock invocation failed: {e}", exc_info=True)
+        raise
 
 
 def lambda_handler(event: dict, context: Any) -> dict:
@@ -190,8 +307,31 @@ def handle_chat(body: dict) -> dict:
         router = get_router()
         result = router.route(message)
 
-        # If no tool selected, return fallback
+        # If no tool selected, check if we should use Bedrock
         if result.tool_name is None:
+            if use_bedrock:
+                # Use Bedrock to handle the query
+                try:
+                    import asyncio
+                    tools_dict = asyncio.run(mcp.get_tools())
+                    tools = [
+                        {
+                            "name": tool.name,
+                            "description": tool.description,
+                            "input_schema": tool.parameters
+                        }
+                        for tool in tools_dict.values()
+                    ]
+                    
+                    bedrock_result = call_bedrock_with_tools(message, tools)
+                    bedrock_result["requestId"] = request_id
+                    return bedrock_result
+                    
+                except Exception as e:
+                    logger.error(f"Bedrock fallback failed: {e}", exc_info=True)
+                    # Fall through to deterministic fallback
+            
+            # Return deterministic fallback
             return {
                 "answer": result.fallback_response,
                 "toolUsed": False,
@@ -206,8 +346,12 @@ def handle_chat(body: dict) -> dict:
         logger.info(f"Executing tool: {result.tool_name} with args: {result.tool_args}")
 
         try:
-            # Call tool through FastMCP registry
-            tool_results = mcp.call_tool(result.tool_name, result.tool_args)
+            # Call tool through FastMCP - get_tool is async
+            import asyncio
+            tool = asyncio.run(mcp.get_tool(result.tool_name))
+            
+            # Call the tool function directly
+            tool_results = tool.fn(**result.tool_args)
 
             # Format response
             if isinstance(tool_results, list):
@@ -228,7 +372,7 @@ def handle_chat(body: dict) -> dict:
                 "toolArgs": result.tool_args,
                 "toolResults": tool_results if isinstance(tool_results, list) else [str(tool_results)],
                 "requestId": request_id,
-                "model": None
+                "model": "deterministic-router"
             }
 
         except Exception as e:
@@ -264,14 +408,18 @@ def handle_tools() -> list[dict]:
         [{ name: str, description: str, inputSchema: dict }]
     """
     try:
-        tools = mcp.list_tools()
+        # FastMCP get_tools() is async, but we need sync for Lambda
+        # Use asyncio.run to call it
+        import asyncio
+        tools_dict = asyncio.run(mcp.get_tools())
+        
         return [
             {
                 "name": tool.name,
                 "description": tool.description,
                 "inputSchema": tool.parameters
             }
-            for tool in tools
+            for tool in tools_dict.values()
         ]
     except Exception as e:
         logger.error(f"Error listing tools: {e}", exc_info=True)

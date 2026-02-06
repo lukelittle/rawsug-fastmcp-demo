@@ -23,9 +23,9 @@ variable "use_bedrock" {
 }
 
 variable "bedrock_model_id" {
-  description = "Bedrock model ID to use"
+  description = "Bedrock model ID or inference profile ID to use"
   type        = string
-  default     = "anthropic.claude-3-5-haiku-20241022-v1:0"
+  default     = "us.anthropic.claude-3-5-haiku-20241022-v1:0"
 }
 
 variable "bedrock_region" {

@@ -236,8 +236,9 @@ class DeterministicRouter:
             match = re.search(pattern, message, re.IGNORECASE)
             if match:
                 artist = match.group(1).strip()
-                # Clean up common trailing words
+                # Clean up common trailing words and punctuation
                 artist = re.sub(r'\s+(records|albums|music|stuff)$', '', artist, flags=re.IGNORECASE)
+                artist = re.sub(r'[?!.,;]+$', '', artist)  # Remove trailing punctuation
                 return Intent.QUERY_ARTIST, {"search_term": artist}
 
         # Check label patterns
@@ -245,6 +246,8 @@ class DeterministicRouter:
             match = re.search(pattern, message, re.IGNORECASE)
             if match:
                 label = match.group(1).strip()
+                # Remove trailing punctuation
+                label = re.sub(r'[?!.,;]+$', '', label)
                 return Intent.QUERY_LABEL, {"search_term": label}
 
         # Check search patterns
@@ -252,6 +255,8 @@ class DeterministicRouter:
             match = re.search(pattern, message, re.IGNORECASE)
             if match:
                 search_term = match.group(1).strip()
+                # Remove trailing punctuation
+                search_term = re.sub(r'[?!.,;]+$', '', search_term)
                 return Intent.SEARCH_ALL, {"search_term": search_term}
 
         # No match
